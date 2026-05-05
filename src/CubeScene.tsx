@@ -1,7 +1,7 @@
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, Line, Text } from '@react-three/drei'
-import { useMemo } from 'react'
-import { Vector3 } from 'three'
+import { useMemo, useRef } from 'react'
+import { Vector3, type Mesh } from 'three'
 import { EDGES, VERTICES, VERTEX_KEYS, type VertexKey } from './cubeData'
 import { commonPerpendicular } from './math/commonPerpendicular'
 
@@ -22,6 +22,32 @@ function CameraPullback() {
   camera.position.set(2.6, 2.0, 2.8)
   camera.lookAt(0.5, 0.5, 0.5)
   return null
+}
+
+/** Build a right-angle (square) marker at `at`, in the plane spanned by `dir1` and `dir2`. */
+function rightAngleSquare(at: Vector3, dir1: Vector3, dir2: Vector3, size: number) {
+  const u = dir1.clone().normalize().multiplyScalar(size)
+  const v = dir2.clone().normalize().multiplyScalar(size)
+  const p0 = at.clone()
+  const p1 = at.clone().add(u)
+  const p2 = at.clone().add(u).add(v)
+  const p3 = at.clone().add(v)
+  return [p0.toArray(), p1.toArray(), p2.toArray(), p3.toArray(), p0.toArray()] as [number, number, number][]
+}
+
+/** Pulsing green sphere */
+function PulseSphere({ position }: { position: [number, number, number] }) {
+  const ref = useRef<Mesh>(null)
+  useFrame((state) => {
+    const s = 1 + 0.18 * Math.sin(state.clock.elapsedTime * 2.4)
+    if (ref.current) ref.current.scale.setScalar(s)
+  })
+  return (
+    <mesh ref={ref} position={position}>
+      <sphereGeometry args={[0.045, 16, 16]} />
+      <meshStandardMaterial color="#16a34a" emissive="#16a34a" emissiveIntensity={0.35} />
+    </mesh>
+  )
 }
 
 export default function CubeScene({ A, B, C, D, showPerpendicular, showLabels }: Props) {
@@ -109,45 +135,95 @@ export default function CubeScene({ A, B, C, D, showPerpendicular, showLabels }:
       />
 
       {/* Common perpendicular */}
-      {showPerpendicular && (
+      {showPerpendicular && !perp.parallel && (
         <>
+          {/* Main perpendicular segment (thick) */}
           <Line
             points={[perp.foot1.toArray(), perp.foot2.toArray()]}
             color="#16a34a"
-            lineWidth={4}
+            lineWidth={5}
           />
-          {/* Foot markers */}
-          <mesh position={perp.foot1.toArray()}>
-            <sphereGeometry args={[0.035, 16, 16]} />
-            <meshStandardMaterial color="#16a34a" />
-          </mesh>
-          <mesh position={perp.foot2.toArray()}>
-            <sphereGeometry args={[0.035, 16, 16]} />
-            <meshStandardMaterial color="#16a34a" />
-          </mesh>
+
+          {/* Right-angle square at P (in plane of AB direction and PQ direction) */}
+          <Line
+            points={rightAngleSquare(
+              perp.foot1,
+              new Vector3().subVectors(Bpos, Apos),
+              new Vector3().subVectors(perp.foot2, perp.foot1),
+              0.08,
+            )}
+            color="#16a34a"
+            lineWidth={1.5}
+          />
+
+          {/* Right-angle square at Q (in plane of CD direction and QP direction) */}
+          <Line
+            points={rightAngleSquare(
+              perp.foot2,
+              new Vector3().subVectors(Dpos, Cpos),
+              new Vector3().subVectors(perp.foot1, perp.foot2),
+              0.08,
+            )}
+            color="#16a34a"
+            lineWidth={1.5}
+          />
+
+          {/* Pulsing foot markers */}
+          <PulseSphere position={perp.foot1.toArray() as [number, number, number]} />
+          <PulseSphere position={perp.foot2.toArray() as [number, number, number]} />
+
           {showLabels && (
             <>
               <Text
-                position={[perp.foot1.x, perp.foot1.y + 0.1, perp.foot1.z]}
-                fontSize={0.09}
+                position={[perp.foot1.x, perp.foot1.y + 0.13, perp.foot1.z]}
+                fontSize={0.11}
                 color="#0f7c34"
                 outlineWidth={0.005}
                 outlineColor="#fff"
+                fontWeight="bold"
               >
                 P
               </Text>
               <Text
-                position={[perp.foot2.x, perp.foot2.y + 0.1, perp.foot2.z]}
-                fontSize={0.09}
+                position={[perp.foot2.x, perp.foot2.y + 0.13, perp.foot2.z]}
+                fontSize={0.11}
+                color="#0f7c34"
+                outlineWidth={0.005}
+                outlineColor="#fff"
+                fontWeight="bold"
+              >
+                Q
+              </Text>
+              {/* Length label at midpoint */}
+              <Text
+                position={[
+                  (perp.foot1.x + perp.foot2.x) / 2,
+                  (perp.foot1.y + perp.foot2.y) / 2 + 0.08,
+                  (perp.foot1.z + perp.foot2.z) / 2,
+                ]}
+                fontSize={0.08}
                 color="#0f7c34"
                 outlineWidth={0.005}
                 outlineColor="#fff"
               >
-                Q
+                |PQ|={perp.length.toFixed(2)}
               </Text>
             </>
           )}
         </>
+      )}
+
+      {/* If lines are parallel, show a notice */}
+      {showPerpendicular && perp.parallel && (
+        <Text
+          position={[0.5, 1.4, 0.5]}
+          fontSize={0.1}
+          color="#a33"
+          outlineWidth={0.005}
+          outlineColor="#fff"
+        >
+          Lines are parallel — perpendicular not unique
+        </Text>
       )}
 
       {/* Floor grid for spatial reference */}
